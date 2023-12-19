@@ -59,7 +59,8 @@ class Element(BaseElement):
     
     def dofIndicesPermutation(self) -> np.ndarray:
         """The permutation pattern for the residual vector and the stiffness matrix to
-        aggregate all entries in order to resemble the defined fields nodewise."""
+        aggregate all entries in order to resemble the defined fields nodewise.
+        In this case it stays the same because we use the nodes exactly like they are."""
 
         if self.elementtype[0:2] == "Q4": # for 4 nodes
             return np.arange(0,8)
@@ -80,7 +81,6 @@ class Element(BaseElement):
         elif self.elementtype[0:2] == "Q8":
             return "quad8"
         elif self.elementtype[0:2] == "H8":
-            elType = "hexa8"
             return "hexa8"
         else:
             raise Exception("This element Type doesn't exist")
@@ -111,7 +111,7 @@ class Element(BaseElement):
         elNumber
             A unique integer label used for all kinds of purposes.
         
-        The following types of elements and attributes are currently possible (elementtype):
+        The following types of elements and attributes are currently possible (elementType):
 
         2D elements
         -----------
@@ -127,15 +127,15 @@ class Element(BaseElement):
         ----------
         The following attributes are also included in the elementtype definition:
             R
-                reduced integration for element in elementtype[2].
+                reduced integration for element, in elementtype[2].
             N
-                regular/normal integration for element in elementtype[2].
+                regular/normal integration for element, in elementtype[2].
             E
-                extended integration for element in elementtype[2].
+                extended integration for element, in elementtype[2].
             PE
-                use plane strain for 2D elements in elementtype[3:5] or [2:4].
+                use plane strain for 2D elements, in elementtype[3:5] or [2:4].
             PS
-                use plane stress for 2D elements in elementtype[3:5] or [2:4].
+                use plane stress for 2D elements, in elementtype[3:5] or [2:4].
         
         If R, N or E is not given by the user, we assume N. 
         If PE or PS is not given by the user, we assume PE."""
@@ -155,7 +155,7 @@ class Element(BaseElement):
         """
 
         self._nodes = nodes
-        _nodesCoordinates = np.array ( [ n.coordinates for n in nodes  ]   ) 
+        _nodesCoordinates = np.array ( [ n.coordinates for n in nodes  ]   ) # get node coordinates
         self._nodesCoordinates = _nodesCoordinates.transpose() # nodes given column-wise: x-coordinate - y-coordinate
 
     
@@ -166,6 +166,11 @@ class Element(BaseElement):
         ----------
         elementProperties
             A numpy array containing the element properties.
+
+        Possible Parameters
+        -------------------
+        thickness
+            Thickness of 2D elements.
         """
         
         if self.elementtype[0] in ("T","Q"):
@@ -189,6 +194,13 @@ class Element(BaseElement):
             The name of the requested material.
         materialProperties
             The numpy array containing the material properties.
+
+        Possible material parameters
+        ----------------------------
+        E
+            Elasticity module, has to be given first.
+        v
+            Poisson's ratio, has to be given second.
         """
         self.E = materialProperties[0] # set E
         self.v = materialProperties[1] # set v
@@ -253,14 +265,14 @@ class Element(BaseElement):
         dTime: float,
     ):
         
-        """Evaluate the residual and stiffness for given time, field, and field increment due to a surface load.
+        """Evaluate the residual and stiffness matrix for given time, field, and field increment due to a displacement or load.
 
         Parameters
         ----------
         P
-            The external load vector to be defined.
+            The external load vector gets calculated.
         K
-            The stiffness matrix to be defined.
+            The stiffness matrix gets calculated.
         U
             The current solution vector.
         dU
