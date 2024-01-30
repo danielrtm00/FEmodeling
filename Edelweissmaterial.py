@@ -1,6 +1,5 @@
 import numpy as np
 import numpy.linalg as lin
-from fe.elements.displacementelement.element import Element
 
 class Edelweissmaterial():
     """Defines a linear elastic material."""
@@ -21,7 +20,7 @@ class Edelweissmaterial():
         else:
             raise Exception("This material type doesn't exist (yet).")
 
-    def computeStiffness(self, K: np.array, elementType: str, x: np.array):
+    def computeStiffness(self, K: np.array, elementType: str, x: np.array, th: float):
         """Compute the stiffness matrix K from a given material for a given element."""
 
         self.elementtype = elementType
@@ -108,7 +107,7 @@ class Edelweissmaterial():
                     c = np.vstack([np.hstack([h, np.zeros([2, 1])]), np.hstack([np.zeros([2, 1]), h])])
                     # [B] for all different s and t
                     Bi = a @ b @ c
-                    Kii = np.transpose(Bi) @ Ei @ Bi * lin.det(J) * self.th * w[i]
+                    Kii = np.transpose(Bi) @ Ei @ Bi * lin.det(J) * th * w[i]
                     Ki = Ki + Kii
             elif self.elementtype[4] == "8":
                 # calc all parameters for X and Y (Q8)
@@ -191,7 +190,7 @@ class Edelweissmaterial():
                     c = np.vstack([np.hstack([h, np.zeros([2, 1])]), np.hstack([np.zeros([2, 1]), h])])
                     # [B] for all different s and t
                     Bi = a @ b @ c
-                    Kii = np.transpose(Bi) @ Ei @ Bi * lin.det(J) * self.th * w[i]
+                    Kii = np.transpose(Bi) @ Ei @ Bi * lin.det(J) * th * w[i]
                     Ki = Ki + Kii
         elif self.elementtype[0:5] == "Hexa8":  # 3D hexahedron element
             # Ei = elasticity matrix
@@ -377,6 +376,7 @@ class Edelweissmaterial():
                 Kii = np.transpose(Bi) @ Ei @ Bi * lin.det(J) * w[i]
                 Ki = Ki + Kii
         K[:] = Ki  # add Ki
+        self.K_ = K
     
-    def computeStress(self, stress: np.array, dStressDDDeformationGradient: np.array, StrOld: np.array, StrNew: np.array, timeNew: double, dT: double):
+    def computeStress(self, stress: np.array, dStressDDDeformationGradient: np.array, StrOld: np.array, StrNew: np.array, timeNew: float, dT: float):
         pass
