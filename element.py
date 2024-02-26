@@ -2,6 +2,7 @@ import numpy as np
 import numpy.linalg as lin
 from fe.points.node import Node
 from fe.elements.base.baseelement import BaseElement
+from fe.materials.EdelweissMaterial import EdelweissMaterial
 import pdb
 
 
@@ -10,18 +11,13 @@ class Element(BaseElement):
     def elNumber(self) -> int:
         """The unique number of this element"""
 
-        return self.elnumber  # return number
+        return self._elNumber  # return number
 
     @property
     def nNodes(self) -> int:
         """The number of nodes this element requires"""
 
-        if self.elementtype[0:5] == "Quad4":  # for 4 nodes
-            return 4
-        elif self.elementtype[0:5] in ("Quad8", "Hexa8"):  # for 8 nodes
-            return 8
-        else:
-            raise Exception("This element Type doesn't exist")
+        return self.diction["nNodes"]
 
     @property
     def nodes(self) -> int:
@@ -33,34 +29,13 @@ class Element(BaseElement):
     def nDof(self) -> int:
         """The total number of degrees of freedom this element has"""
 
-        if self.elementtype[0:5] == "Quad4":  # for 4 nodes
-            return 8
-        elif self.elementtype[0:5] == "Quad8":  # for 8 nodes
-            return 16
-        elif self.elementtype[0:5] == "Hexa8":  # for hexahedron 3D with 8 nodes
-            return 24
-        else:
-            raise Exception("This element Type doesn't exist")
+        return self.diction["nDof"]
 
     @property
     def fields(self) -> list[list[str]]:
         """The list of fields per nodes."""
 
-        if self.elementtype[0:5] == "Quad4":
-            return [["displacement"], ["displacement"], ["displacement"], ["displacement"]]
-        elif self.elementtype[0:5] in ("Quad8", "Hexa8"):
-            return [
-                ["displacement"],
-                ["displacement"],
-                ["displacement"],
-                ["displacement"],
-                ["displacement"],
-                ["displacement"],
-                ["displacement"],
-                ["displacement"],
-            ]
-        else:
-            raise Exception("This element Type doesn't exist")
+        return self.diction["fields"]
 
     @property
     def dofIndicesPermutation(self) -> np.ndarray:
@@ -68,27 +43,13 @@ class Element(BaseElement):
         aggregate all entries in order to resemble the defined fields nodewise.
         In this case it stays the same because we use the nodes exactly like they are."""
 
-        if self.elementtype[0:5] == "Quad4":  # for 4 nodes
-            return np.arange(0, 8)
-        elif self.elementtype[0:5] == "Quad8":  # for 8 nodes
-            return np.arange(0, 16)
-        elif self.elementtype[0:5] == "Hexa8":  # for hexahedron 3D with 8 nodes
-            return np.arange(0, 24)
-        else:
-            raise Exception("This element Type doesn't exist")
+        return self.diction["dofIndices"]
 
     @property
     def ensightType(self) -> str:
         """The shape of the element in Ensight Gold notation."""
 
-        if self.elementtype[0:5] == "Quad4":
-            return "quad4"
-        elif self.elementtype[0:5] == "Quad8":
-            return "quad8"
-        elif self.elementtype[0:5] == "Hexa8":
-            return "hexa8"
-        else:
-            raise Exception("This element Type doesn't exist")
+        return self.diction["ensightType"]
 
     def __init__(self, elementType: str, elNumber: int):
         """This element can be used for EdelweissFE. The element currently only allows calculations with node forces and given displacements.
@@ -131,7 +92,53 @@ class Element(BaseElement):
         If PE or PS is not given by the user, we assume PE."""
 
         self.elementtype = elementType[0].upper() + elementType[1:5].lower() + elementType[5:].upper()
-        self.elnumber = elNumber
+        self._elNumber = elNumber
+        if self.elementtype[0] == "Q":
+            if self.elementtype[4] == "4":
+                self.diction = {"nNodes": 4, "nDof": 8, "dofIndices": np.arange(0, 8), "ensightType": "quad4", "dim": 2}
+            elif self.elementtype[4] == "8":
+                self.diction = {"nNodes": 8, "nDof": 16, "dofIndices": np.arange(0, 16), "ensightType": "quad8", "dim": 2}
+            else:
+                raise Exception("Elements of higher order than quadratical have not been implemented.")
+            if self.elementtype[4:6] in ("4N", "8R", "4") or (
+                len(self.elementtype) == 7 and self.elementtype[4] == "4"
+            ):
+                self.diction.update({"Nint": 4, "t": 1 / np.sqrt(3) * np.array([-1, -1, 1, 1]), "s": 1 / np.sqrt(3) * np.array([-1, 1, 1, -1]), "w": np.ones(4)})
+            elif self.elementtype[4:6] == "4R":
+                self.diction.update({"Nint": 1, "t": np.array([0]), "s": np.array([0]), "w": np.array([4])})
+            elif self.elementtype[4:6] in ("8N", "4E", "8") or (
+                len(self.elementtype) == 7 and self.elementtype[4] == "8"
+            ):
+                s = np.sqrt(0.6) * np.array([-1, 0, 1])
+                w1 = (5 / 9) ** 2
+                w2 = (5 / 9) * (8 / 9)
+                w3 = (8 / 9) ** 2
+                self.diction.update({"Nint": 9, "t": np.sqrt(0.6) * np.array([-1, -1, -1, 0, 0, 0, 1, 1, 1]), "s": np.hstack([s, s, s]), "w": np.array([w1, w2, w1, w2, w3, w2, w1, w2, w1])})
+            else:
+                raise Exception("A higher order integration than 9 nodes for 2D has not been implemented.")
+            if self.elementtype[6:8] in ("PE", "") or (len(self.elementtype) == 7 and self.elementtype[5:7] == "PE"):
+                self.diction.update({"plStrain": True})
+            elif self.elementtype[6:8] == "PS" or (len(self.elementtype) == 7 and self.elementtype[5:7] == "PS"):
+                self.diction.update({"plStrain": False})
+        elif self.elementtype[0] == "H":
+            if self.elementtype[4] == "8":
+                self.diction = {"nNodes": 8, "nDof": 24, "dofIndices": np.arange(0, 24), "ensightType": "hexa8", "dim": 3}
+            elif self.elementtype[4:6] == "20":
+                self.diction = {"nNodes": 20, "nDof": 60, "dofIndices": np.arange(0, 60), "ensightType": "hexa20", "dim": 3}
+            else:
+                raise Exception("Elements of higher order than quadratical have not been implemented.")
+            if self.elementtype[4:7] in ("8N", "8", "20R"):
+                t = 1 / np.sqrt(3) * np.array([-1, -1, 1, 1])  # get t
+                s = 1 / np.sqrt(3) * np.array([-1, 1, 1, -1])  # get s
+                self.diction.update({"plStrain": False, "Nint": 8, "z": 1 / np.sqrt(3) * np.array([1, 1, 1, 1, -1, -1, -1, -1]),"t": np.hstack([t, t]), "s": np.hstack([s, s]), "w": np.ones(8)})
+            elif self.elementtype[4:7] == "20N":
+                raise Exception("Higher order integration not possible yet: WIP")
+                #self.diction.update({"plStrain": False, "Nint": 27, "z": np.sqrt(0.6) * np.array([-1, -1, -1, 0, 0, 0, 1, 1, 1]),"t": np.hstack([t, t]), "s": s = np.hstack([s, s]), "w": np.ones(8)})
+            else:
+                raise Exception("A higher order integration than 20 nodes for 3D has not been implemented.")
+        else:
+            raise Exception("This element Type doesn't exist.")
+        self.diction.update({"fields": [["displacement"] for i in range(self.diction["nNodes"])]})
 
     def setNodes(self, nodes: list[Node]):
         """Assign the nodes to the element.
@@ -160,7 +167,7 @@ class Element(BaseElement):
             Thickness of 2D elements.
         """
 
-        if self.elementtype[0] in ("T", "Q"):
+        if self.elementtype[0] == "Q":
             self.th = elementProperties[0]  # thickness
 
     def initializeElement(
@@ -187,8 +194,8 @@ class Element(BaseElement):
         v
             Poisson's ratio, has to be given second.
         """
-        self.E = materialProperties[0]  # set E
-        self.v = materialProperties[1]  # set v
+        self.materialname = materialName  # set material
+        self.material = EdelweissMaterial(self.materialname, materialProperties)
 
     def setInitialCondition(self, stateType: str, values: np.ndarray):
         """Assign initial conditions.
@@ -264,83 +271,46 @@ class Element(BaseElement):
         dTime
             The time increment.
         """
-
+        
         # assume it's plain strain if it's not given by user
-        if self.elementtype[0] in ("Q", "T") and (
-            self.elementtype[6:8] in ("PE", "") or (len(self.elementtype) == 7 and self.elementtype[5:7] == "PE")
-        ):
-            # Ei = elasticity matrix for plane strain for element i (mostly the case for rectangular elements)
-            Ei = (
-                (self.E * (1 - self.v))
-                / ((1 + self.v) * (1 - 2 * self.v))
-                * np.array(
-                    [
-                        [1, self.v / (1 - self.v), 0],
-                        [self.v / (1 - self.v), 1, 0],
-                        [0, 0, (1 - 2 * self.v) / (2 * (1 - self.v))],
-                    ]
-                )
-            )
-        elif self.elementtype[0] in ("Q", "T") and (
-            self.elementtype[6:8] == "PS" or (len(self.elementtype) == 7 and self.elementtype[5:7] == "PS")
-        ):
-            # Ei = elasticity matrix for plane stress for element i
-            Ei = self.E / (1 - self.v**2) * np.array([[1, self.v, 0], [self.v, 1, 0], [0, 0, (1 - self.v) / 2]])
         Ndof = self.nDof
         K = np.reshape(K_, (Ndof, Ndof))
         x = self._nodesCoordinates
-        if self.elementtype[0] == "Q":  # it's a 2D quadrilateral element
+        Nint = self.diction["Nint"]
+        t = self.diction["t"]
+        s = self.diction["s"]
+        w = self.diction["w"]
+        dim = self.diction["dim"]
+        Ei = self.material.computeElasticity(dim,self.diction["plStrain"])
+        J = np.zeros([Nint,dim,dim])
+        b = np.zeros([Nint,dim*dim,dim*dim])
+        c = np.zeros([Nint,dim*dim,Ndof])
+        if dim == 2:  # it's a 2D quadrilateral element
             # [a] matrix that connects strain and displacement derivatives
             a = np.array([[1, 0, 0, 0], [0, 0, 0, 1], [0, 1, 1, 0]])
             # integration points
-            if self.elementtype[4:6] in ("4N", "8R", "4") or (
-                len(self.elementtype) == 7 and self.elementtype[4] == "4"
-            ):  # assume it's normal integration if it's not given
-                Nint = 4
-                # get all points
-                t = 1 / np.sqrt(3) * np.array([-1, -1, 1, 1])  # get t
-                s = 1 / np.sqrt(3) * np.array([-1, 1, 1, -1])  # get s
-                # get weights
-                w = np.array([1, 1, 1, 1])  # weights to all corresponding points
-            elif self.elementtype[4:6] == "4R":
-                Nint = 1
-                t = np.array([0])  # get t
-                s = np.array([0])  # get s
-                # get weights
-                w = np.array([4])  # weights to all corresponding points
-            elif self.elementtype[4:6] in ("8N", "4E", "8") or (
-                len(self.elementtype) == 7 and self.elementtype[4] == "8"
-            ):  # use 9 integration points (for 8 noded element or extended int)
-                Nint = 9
-                # get all points
-                t = np.sqrt(0.6) * np.array([-1, -1, -1, 0, 0, 0, 1, 1, 1])  # get t
-                s = np.sqrt(0.6) * np.array([-1, 0, 1])  # get s
-                s = np.hstack([s, s, s])
-                # get weights
-                w1 = (5 / 9) ** 2
-                w2 = (5 / 9) * (8 / 9)
-                w3 = (8 / 9) ** 2
-                w = np.array([w1, w2, w1, w2, w3, w2, w1, w2, w1])  # weights to all corresponding points
-            else:
-                raise Exception("A higher order integration than 9 nodes for 2D has not been implemented.")
-            if self.elementtype[4] == "4":
+            self.stress = np.zeros([Nint, 3])
+            self.strain = np.zeros([Nint, 3])
+            self.dStressdStrain = np.zeros([3, 3])
+            if self.diction["nNodes"] == 4:
                 # calc all parameters for the X and Y functions (Q4)
                 A = np.array([[1, -1, -1, 1], [1, 1, -1, -1], [1, 1, 1, 1], [1, -1, 1, -1]])
-                ax = np.linalg.inv(A) @ np.transpose(x[0])
-                ay = np.linalg.inv(A) @ np.transpose(x[1])
+                invA = np.linalg.inv(A)
+                ax = invA @ np.transpose(x[0])
+                ay = invA @ np.transpose(x[1])
                 # total Ki for Q4 element
                 Ki = np.zeros([8, 8])
                 for i in range(0, Nint):  # for all Gauss points (N in total)
                     # [J] Jacobi matrix (only Q4)
-                    J = np.array(
+                    J[:][:][i] = np.array(
                         [[ax[1] + ax[3] * t[i], ay[1] + ay[3] * t[i]], [ax[2] + ax[3] * s[i], ay[2] + ay[3] * s[i]]]
                     )
                     # make inverse of Jacobi
-                    invJ = np.linalg.inv(J)
+                    invJ = np.linalg.inv(J[:][:][i])
                     # [b] connects displacement derivatives (Q4)
-                    b = np.array([[invJ, np.zeros([2, 2])], [np.zeros([2, 2]), invJ]])
+                    bi = np.array([[invJ, np.zeros([2, 2])], [np.zeros([2, 2]), invJ]])
                     # make [b] what it should actually look like
-                    b = b.transpose(0, 2, 1, 3).reshape(4, 4)
+                    b[:][:][i] = bi.transpose(0, 2, 1, 3).reshape(4, 4)
                     # [h] as a temporary matrix
                     h = np.array(
                         [
@@ -349,12 +319,8 @@ class Element(BaseElement):
                         ]
                     )
                     # assemble [c] differentiated shapefunctions (Q4)
-                    c = np.vstack([np.hstack([h, np.zeros([2, 1])]), np.hstack([np.zeros([2, 1]), h])])
-                    # [B] for all different s and t
-                    Bi = a @ b @ c
-                    Kii = np.transpose(Bi) @ Ei @ Bi * lin.det(J) * self.th * w[i]
-                    Ki = Ki + Kii
-            elif self.elementtype[4] == "8":
+                    c[:][:][i] = np.vstack([np.hstack([h, np.zeros([2, 1])]), np.hstack([np.zeros([2, 1]), h])])
+            elif self.diction["nNodes"] == 8:
                 # calc all parameters for X and Y (Q8)
                 A = np.array(
                     [
@@ -368,13 +334,14 @@ class Element(BaseElement):
                         [1, -1, 0, 0, 1, 0, 0, 0],
                     ]
                 )
-                ax = np.linalg.inv(A) @ np.transpose(x[0])
-                ay = np.linalg.inv(A) @ np.transpose(x[1])
+                invA = np.linalg.inv(A)
+                ax = invA @ np.transpose(x[0])
+                ay = invA @ np.transpose(x[1])
                 # total Ki for Q8 element
                 Ki = np.zeros([16, 16])
                 for i in range(0, Nint):  # for all Gauss points (N in total)
                     # [J] Jacobi matrix for Q8
-                    J = np.array(
+                    J[:][:][i] = np.array(
                         [
                             [
                                 ax[1] + ax[3] * t[i] + 2 * ax[4] * s[i] + 2 * ax[6] * s[i] * t[i] + ax[7] * t[i] ** 2,
@@ -387,11 +354,11 @@ class Element(BaseElement):
                         ]
                     )
                     # make inverse of Jacobi
-                    invJ = np.linalg.inv(J)
+                    invJ = np.linalg.inv(J[:][:][i])
                     # [b] connects displacement derivatives (Q8)
-                    b = np.array([[invJ, np.zeros([2, 2])], [np.zeros([2, 2]), invJ]])
+                    bi = np.array([[invJ, np.zeros([2, 2])], [np.zeros([2, 2]), invJ]])
                     # make [b] what it should actually look like
-                    b = b.transpose(0, 2, 1, 3).reshape(4, 4)
+                    b[:][:][i] = bi.transpose(0, 2, 1, 3).reshape(4, 4)
                     # [h] as a temporary matrix
                     h = np.array(
                         [
@@ -432,27 +399,9 @@ class Element(BaseElement):
                         ]
                     )
                     # assemble [c] differentiated shapefunctions (Q8)
-                    c = np.vstack([np.hstack([h, np.zeros([2, 1])]), np.hstack([np.zeros([2, 1]), h])])
-                    # [B] for all different s and t
-                    Bi = a @ b @ c
-                    Kii = np.transpose(Bi) @ Ei @ Bi * lin.det(J) * self.th * w[i]
-                    Ki = Ki + Kii
-        elif self.elementtype[0:5] == "Hexa8":  # 3D hexahedron element
-            # Ei = elasticity matrix
-            Ei = (
-                self.E
-                / ((1 + self.v) * (1 - 2 * self.v))
-                * np.array(
-                    [
-                        [(1 - self.v), self.v, self.v, 0, 0, 0],
-                        [self.v, (1 - self.v), self.v, 0, 0, 0],
-                        [self.v, self.v, (1 - self.v), 0, 0, 0],
-                        [0, 0, 0, (1 - 2 * self.v) / 2, 0, 0],
-                        [0, 0, 0, 0, (1 - 2 * self.v) / 2, 0],
-                        [0, 0, 0, 0, 0, (1 - 2 * self.v) / 2],
-                    ]
-                )
-            )
+                    c[:][:][i] = np.vstack([np.hstack([h, np.zeros([2, 1])]), np.hstack([np.zeros([2, 1]), h])])
+        elif dim == 3:  # 3D hexahedron element
+            z = self.diction["z"]
             # [a] matrix that connects strain and displacement derivatives
             a = np.array(
                 [
@@ -464,19 +413,6 @@ class Element(BaseElement):
                     [0, 0, 1, 0, 0, 0, 1, 0, 0],
                 ]
             )
-            if self.elementtype[4:6] in ("8N", "8"):
-                Nint = 8
-                # get all points
-                z = 1 / np.sqrt(3) * np.array([1, 1, 1, 1, -1, -1, -1, -1])  # get z (local z)
-                t = 1 / np.sqrt(3) * np.array([-1, -1, 1, 1])  # get t
-                s = 1 / np.sqrt(3) * np.array([-1, 1, 1, -1])  # get s
-                t = np.hstack([t, t])
-                s = np.hstack([s, s])
-                # get weights
-                w = np.array([1, 1, 1, 1, 1, 1, 1, 1])  # weights to all corresponding points
-            else:  # higher order integration follow later
-                raise Exception("Higher order integration not possible yet: WIP")
-            # calc all parameters for the X, Y and Z functions
             A = np.array(
                 [
                     [1, -1, -1, -1, 1, 1, 1, -1],
@@ -489,14 +425,19 @@ class Element(BaseElement):
                     [1, 1, 1, -1, 1, -1, -1, -1],
                 ]
             )
-            ax = np.linalg.inv(A) @ np.transpose(x[0])
-            ay = np.linalg.inv(A) @ np.transpose(x[1])
-            az = np.linalg.inv(A) @ np.transpose(x[2])
+            invA = np.linalg.inv(A)
+            ax = invA @ np.transpose(x[0])
+            ay = invA @ np.transpose(x[1])
+            az = invA @ np.transpose(x[2])
             # total Ki for Hex8 element
             Ki = np.zeros([24, 24])
+            self.stress = np.zeros([Nint, 6])
+            self.strain = np.zeros([Nint, 6])
+            self.dStressdStrain = np.zeros([6, 6])
+            self.th = 1 # set thickness to 1 (no thickness for 3D elements)
             for i in range(0, Nint):  # for all Gauss points (N in total)
                 # [J] Jacobi matrix (only H8)
-                J = np.array(
+                J[:][:][i] = np.array(
                     [
                         [
                             ax[1] + ax[4] * t[i] + ax[6] * z[i] + ax[7] * t[i] * z[i],
@@ -516,9 +457,9 @@ class Element(BaseElement):
                     ]
                 )
                 # make inverse of Jacobi
-                invJ = np.linalg.inv(J)
+                invJ = np.linalg.inv(J[:][:][i])
                 # [b] connects displacement derivatives (Hex8)
-                b = np.array(
+                bi = np.array(
                     [
                         [invJ, np.zeros([3, 3]), np.zeros([3, 3])],
                         [np.zeros([3, 3]), invJ, np.zeros([3, 3])],
@@ -526,7 +467,7 @@ class Element(BaseElement):
                     ]
                 )
                 # make [b] what it should actually look like
-                b = b.transpose(0, 2, 1, 3).reshape(9, 9)
+                b[:][:][i] = bi.transpose(0, 2, 1, 3).reshape(9, 9)
                 # [h] as a temporary matrix
                 h = (
                     1
@@ -609,19 +550,28 @@ class Element(BaseElement):
                     )
                 )
                 # assemble [c] differentiated shapefunctions (Hex8)
-                c = np.vstack(
+                c[:][:][i] = np.vstack(
                     [
                         np.hstack([h, np.zeros([3, 2])]),
                         np.hstack([np.zeros([3, 1]), h, np.zeros([3, 1])]),
                         np.hstack([np.zeros([3, 2]), h]),
                     ]
                 )
-                # [B] for all different s and t
-                Bi = a @ b @ c
-                Kii = np.transpose(Bi) @ Ei @ Bi * lin.det(J) * w[i]
-                Ki = Ki + Kii
+        plStrain = self.diction["plStrain"]
+        for i in range(0,Nint):
+            # [B] for all different s and t
+            Bi = a @ b[:][:][i] @ c[:][:][i]
+            # get stress and strain
+            self.strain[i] += Bi @ dU
+            dic = self.material.computeStress(self.stress[i], self.dStressdStrain, self.strain[i], time, dTime, dU, U, dim, plStrain)
+            self.stress[i] = dic["stress"]
+            # get stiffness matrix for element j in point i
+            Kii = np.transpose(Bi) @ Ei @ Bi * lin.det(J[:][:][i]) * self.th * w[i]
+            # calculate P
+            P -= np.transpose(Bi) @ self.stress[i] * lin.det(J[:][:][i]) * w[i] * self.th
+            Ki += Kii
         K[:] = Ki  # add Ki
-        P[:] -= Ki @ U
+        K_ = Ki
 
     def computeBodyForce(
         self, P: np.ndarray, K: np.ndarray, load: np.ndarray, U: np.ndarray, time: np.ndarray, dTime: float
@@ -690,7 +640,7 @@ class Element(BaseElement):
             The element's central coordinates.
         """
 
-        x=self._nodesCoordinates
+        x = self._nodesCoordinates
         return np.average(x, axis=1)
 
     def getNumberOfQuadraturePoints(self) -> int:
@@ -701,25 +651,8 @@ class Element(BaseElement):
         np.ndarray
             The element's qp coordinates.
         """
-        
-        if self.elementtype[0] == "Q":  # it's a 2D quadrilateral element
-            if self.elementtype[4:6] in ("4N", "8R", "4") or (
-                len(self.elementtype) == 7 and self.elementtype[4] == "4"
-            ):  return 4
-            elif self.elementtype[4:6] == "4R":
-                return 1
-            elif self.elementtype[4:6] in ("8N", "4E", "8") or (
-                len(self.elementtype) == 7 and self.elementtype[4] == "8"
-            ):  return 9
-            else:
-                raise Exception("Higher order integration not possible yet: WIP")
-        elif self.elementtype[0:5] == "Hexa8":
-            if self.elementtype[4:6] in ("8N", "8"):
-                return 8
-            else:
-                raise Exception("Higher order integration not possible yet: WIP")
-        else:
-            raise Exception("This element Type doesn't exist.")
+
+        return self.diction["Nint"]
 
     def getCoordinatesAtQuadraturePoints(self) -> np.ndarray:
         """Compute the underlying MarmotElement qp coordinates.
@@ -729,5 +662,105 @@ class Element(BaseElement):
         np.ndarray
             The element's qp coordinates.
         """
-
-        return None
+        x = self._nodesCoordinates
+        t = self.diction["t"]
+        s = self.diction["s"]
+        dim = self.diction["dim"]
+        xI = np.zeros([Nint, dim])
+        if dim == 2:  # it's a 2D quadrilateral element
+            if self.diction["nNodes"] == 4:
+                A = np.array([[1, -1, -1, 1], [1, 1, -1, -1], [1, 1, 1, 1], [1, -1, 1, -1]])
+                invA = np.linalg.inv(A)
+                ax = invA @ np.transpose(x[0])
+                ay = invA @ np.transpose(x[1])
+                for i in range(0, Nint):
+                    xI[i][0] = ax[0] + ax[1] * s[i] + ax[2] * t[i] + ax[3] * t[i] * s[i]
+                    xI[i][1] = ay[0] + ay[1] * s[i] + ay[2] * t[i] + ay[3] * t[i] * s[i]
+            elif self.diction["nNodes"] == 8:
+                # calc all parameters for X and Y (Q8)
+                A = np.array(
+                    [
+                        [1, -1, -1, 1, 1, 1, -1, -1],
+                        [1, 1, -1, -1, 1, 1, -1, 1],
+                        [1, 1, 1, 1, 1, 1, 1, 1],
+                        [1, -1, 1, -1, 1, 1, 1, -1],
+                        [1, 0, -1, 0, 0, 1, 0, 0],
+                        [1, 1, 0, 0, 1, 0, 0, 0],
+                        [1, 0, 1, 0, 0, 1, 0, 0],
+                        [1, -1, 0, 0, 1, 0, 0, 0],
+                    ]
+                )
+                invA = np.linalg.inv(A)
+                ax = invA @ np.transpose(x[0])
+                ay = invA @ np.transpose(x[1])
+                for i in range(0, Nint):
+                    xI[i][0] = (
+                        ax[0]
+                        + ax[1] * s[i]
+                        + ax[2] * t[i]
+                        + ax[3] * t[i] * s[i]
+                        + ax[4] * s[i] ** 2
+                        + ax[5] * t[i] ** 2
+                        + ax[6] * s[i] ** 2 * t[i]
+                        + ax[8] * s[i] * t[i] ** 2
+                    )
+                    xI[i][1] = (
+                        ay[0]
+                        + ay[1] * s[i]
+                        + ay[2] * t[i]
+                        + ay[3] * t[i] * s[i]
+                        + ay[4] * s[i] ** 2
+                        + ay[5] * t[i] ** 2
+                        + ay[6] * s[i] ** 2 * t[i]
+                        + ay[8] * s[i] * t[i] ** 2
+                    )
+        elif dim == 3:  # 3D hexahedron element
+            z = self.diction["z"]
+            A = np.array(
+                [
+                    [1, -1, -1, -1, 1, 1, 1, -1],
+                    [1, -1, -1, 1, 1, -1, -1, 1],
+                    [1, 1, -1, 1, -1, -1, 1, -1],
+                    [1, 1, -1, -1, -1, 1, -1, 1],
+                    [1, -1, 1, -1, -1, -1, 1, 1],
+                    [1, -1, 1, 1, -1, 1, -1, -1],
+                    [1, 1, 1, 1, 1, 1, 1, 1],
+                    [1, 1, 1, -1, 1, -1, -1, -1],
+                ]
+            )
+            invA = np.linalg.inv(A)
+            ax = invA @ np.transpose(x[0])
+            ay = invA @ np.transpose(x[1])
+            az = invA @ np.transpose(x[2])
+            for i in range(0, Nint):
+                xI[i][0] = (
+                    ax[0]
+                    + ax[1] * s[i]
+                    + ax[2] * t[i]
+                    + ax[3] * z[i]
+                    + ax[4] * s[i] * t[i]
+                    + ax[5] * t[i] * z[i]
+                    + ax[6] * s[i] * z[i]
+                    + ax[7] * s[i] * t[i] * z[i]
+                )
+                xI[i][1] = (
+                    ay[0]
+                    + ay[1] * s[i]
+                    + ay[2] * t[i]
+                    + ay[3] * z[i]
+                    + ay[4] * s[i] * t[i]
+                    + ay[5] * t[i] * z[i]
+                    + ay[6] * s[i] * z[i]
+                    + ay[7] * s[i] * t[i] * z[i]
+                )
+                xI[i][2] = (
+                    az[0]
+                    + az[1] * s[i]
+                    + az[2] * t[i]
+                    + az[3] * z[i]
+                    + az[4] * s[i] * t[i]
+                    + az[5] * t[i] * z[i]
+                    + az[6] * s[i] * z[i]
+                    + az[7] * s[i] * t[i] * z[i]
+                )
+        return xI
